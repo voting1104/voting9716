@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Voting - Secure Remote Access</title>
+    <style>
+        :root { --primary: #0078d4; --success: #16a34a; --dark: #1e293b; --manager-color: #6d28d9; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #cbd5e0; display: flex; justify-content: center; padding: 20px; margin: 0; }
+        .container { background: white; width: 100%; max-width: 550px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        
+        h2 { text-align: center; color: var(--dark); margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1.5px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; margin-top: 10px; }
+        .btn-outlook { background: var(--primary); color: white; }
+        .btn-login { background: var(--dark); color: white; }
+        .btn-vote { background: var(--success); color: white; width: auto; padding: 8px 20px; }
+        .btn-toggle { background: #f59e0b; color: white; }
+        .btn-toggle.active { background: #10b981; }
+        .btn-upload { background: #64748b; color: white; font-size: 11px; padding: 4px; width: auto; }
+        .btn-logout { background: #dc2626; color: white; margin-top: 25px; }
+
+        .card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; margin-bottom: 15px; display: flex; align-items: center; background: #fff; }
+        .symbol-frame { width: 70px; height: 70px; border-radius: 10px; background: #eee; margin-right: 20px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 2px solid #ddd; }
+        .symbol-frame img { width: 100%; height: 100%; object-fit: cover; }
+        
+        .name-txt { flex-grow: 1; font-weight: bold; font-size: 18px; color: var(--dark); }
+        .result-pill { background: #dbeafe; color: var(--primary); padding: 5px 12px; border-radius: 20px; font-weight: 800; }
+        
+        .manager-section { background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; }
+        .result-view-box { background: #fff9c4; border: 2px dashed #fbc02d; padding: 15px; border-radius: 12px; margin-top: 20px; }
+        .hidden { display: none; }
+        label { font-size: 13px; font-weight: bold; color: #475569; }
+        .hint { font-size: 11px; color: #64748b; margin-bottom: 10px; display: block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <!-- LOGIN PAGE -->
+    <div id="loginSection">
+        <h2>🗳️ Digital Election Portal</h2>
+        <input type="text" id="loginID" placeholder="User ID">
+        <input type="password" id="loginPass" placeholder="Password">
+        <button class="btn-login" onclick="handleLogin()">Sign In</button>
+        <p style="text-align:center; font-size:12px; color:#64748b; margin-top:15px;">Check your <b>Outlook Mail</b> for the link and login credentials.</p>
+    </div>
+
+    <!-- MANAGER DASHBOARD -->
+    <div id="managerDash" class="hidden">
+        <h2 style="color: var(--manager-color);">Manager Admin Panel</h2>
+        
+        <!-- Setting the Website Link -->
+        <div class="manager-section">
+            <label>Step 1: Set Project Link</label>
+            <span class="hint">Type the link voters should click to open the site.</span>
+            <input type="text" id="siteUrl" placeholder="e.g. https://your-project-link.com" value="https://voting1104.github.io/voting1104/">
+            
+            <label>Step 2: Control Results Visibility</label>
+            <button id="toggleResultsBtn" class="btn-toggle" onclick="toggleResultsVisibility()">Enable Results for Voters: OFF</button>
+        </div>
+
+        <div class="manager-section">
+            <label>Step 3: Register & Email Voter (Outlook)</label>
+            <input type="email" id="vEmail" placeholder="Voter's Outlook Email">
+            <input type="text" id="vID" placeholder="Assign Voter ID">
+            <input type="text" id="vPass" placeholder="Assign Password">
+            <button class="btn-outlook" onclick="registerAndSendLink()">📧 Send ID, Pass & Link via Outlook</button>
+        </div>
+
+        <h4>Candidates & Live Tally</h4>
+        <div id="managerResults"></div>
+
+        <button class="btn-logout" onclick="logout()">Logout Manager</button>
+    </div>
+
+    <!-- VOTER DASHBOARD -->
+    <div id="voterDash" class="hidden">
+        <h2 style="color: var(--success);">Digital Ballot Box</h2>
+        <p id="voterName" style="text-align:center; font-weight:bold;"></p>
+        
+        <div id="voterBallot"></div>
+
+        <div id="voterResultsView" class="hidden result-view-box">
+            <h3 style="text-align:center; margin-top:0;">Final Election Results</h3>
+            <div id="voterResultsContent"></div>
+        </div>
+
+        <div id="votedSuccess" class="hidden" style="text-align:center; padding:20px;">
+            <h2 style="color: var(--success);">✅ Vote Recorded</h2>
+            <p>Your identity has been verified and vote stored.</p>
+        </div>
+
+        <button class="btn-logout" onclick="logout()">Logout</button>
+    </div>
+</div>
+
+<script>
+    // --- DATA ---
+    let candidates = JSON.parse(localStorage.getItem('election_candidates')) || {
+        "Monesh": { votes: 0, image: "" },
+        "Rajesh": { votes: 0, image: "" },
+        "Gnan": { votes: 0, image: "" }
+    };
+    let voters = JSON.parse(localStorage.getItem('election_voters')) || [];
+    let showResultsToVoters = JSON.parse(localStorage.getItem('showResults')) || false;
+
+    const MID = "23b81a05hw";
+    const MPASS = "shankarifamily";
+    let activeVoter = null;
+
+    function showView(id) {
+        document.querySelectorAll('.container > div').forEach(d => d.classList.add('hidden'));
+        document.getElementById(id).classList.remove('hidden');
+    }
+
+    // --- LOGIN ---
+    function handleLogin() {
+        const id = document.getElementById('loginID').value;
+        const pass = document.getElementById('loginPass').value;
+
+        if(id === MID && pass === MPASS) {
+            loadManager();
+        } else {
+            const voter = voters.find(v => v.id === id && v.pass === pass);
+            if(voter) { activeVoter = voter; loadVoter(); } 
+            else { alert("Access Denied! Check your Outlook mail for credentials."); }
+        }
+    }
+
+    // --- MANAGER ACTIONS ---
+    function loadManager() {
+        showView('managerDash');
+        updateToggleBtn();
+        const list = document.getElementById('managerResults');
+        list.innerHTML = "";
+
+        Object.keys(candidates).forEach(name => {
+            const card = document.createElement('div');
+            card.className = "card";
+            const imgHtml = candidates[name].image ? `<img src="${candidates[name].image}">` : `<span style="color:#ccc">No Image</span>`;
+            card.innerHTML = `
+                <div class="symbol-frame">${imgHtml}</div>
+                <div class="name-txt">${name} <br>
+                    <input type="file" id="file_${name}" class="hidden" accept="image/*" onchange="uploadImage('${name}', event)">
+                    <button class="btn-upload" onclick="document.getElementById('file_${name}').click()">Change Image</button>
+                </div>
+                <div class="result-pill">${candidates[name].votes} Votes</div>
+            `;
+            list.appendChild(card);
+        });
+    }
+
+    function registerAndSendLink() {
+        const email = document.getElementById('vEmail').value;
+        const id = document.getElementById('vID').value;
+        const pass = document.getElementById('vPass').value;
+        const url = document.getElementById('siteUrl').value;
+
+        if(!email || !id || !pass || !url) return alert("All fields including Website Link are required!");
+        
+        if(voters.find(v => v.id === id)) return alert("ID already exists!");
+        voters.push({ id, pass, email, hasVoted: false });
+        localStorage.setItem('election_voters', JSON.stringify(voters));
+
+        // Outlook Deep Link
+        const subject = encodeURIComponent("Voting Portal Access & Credentials");
+        const body = encodeURIComponent(
+            `Hello,\n\nYou have been authorized to vote in the upcoming election.\n\n` +
+            `Click here to open the voting portal: ${url}\n\n` +
+            `Your Login Credentials:\n` +
+            `Voter ID: ${id}\n` +
+            `Password: ${pass}\n\n` +
+            `Please do not share these credentials with anyone.`
+        );
+        
+        const outlookUrl = `https://outlook.office.com/mail/deeplink/compose?to=${email}&subject=${subject}&body=${body}`;
+        window.open(outlookUrl, '_blank');
+        
+        alert("Voter registered. Outlook has been opened to send the Link, ID, and Password.");
+        loadManager();
+    }
+
+    function uploadImage(name, event) {
+        const file = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            candidates[name].image = e.target.result;
+            localStorage.setItem('election_candidates', JSON.stringify(candidates));
+            loadManager();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function toggleResultsVisibility() {
+        showResultsToVoters = !showResultsToVoters;
+        localStorage.setItem('showResults', JSON.stringify(showResultsToVoters));
+        updateToggleBtn();
+    }
+
+    function updateToggleBtn() {
+        const btn = document.getElementById('toggleResultsBtn');
+        btn.innerText = showResultsToVoters ? "Enable Results for Voters: ON" : "Enable Results for Voters: OFF";
+        btn.classList.toggle('active', showResultsToVoters);
+    }
+
+    // --- VOTER ACTIONS ---
+    function loadVoter() {
+        showView('voterDash');
+        document.getElementById('voterName').innerText = "Voter ID: " + activeVoter.id;
+        updateVoterUI();
+    }
+
+    function updateVoterUI() {
+        const ballot = document.getElementById('voterBallot');
+        const resBox = document.getElementById('voterResultsView');
+        const resContent = document.getElementById('voterResultsContent');
+        
+        ballot.innerHTML = "";
+        if(activeVoter.hasVoted) {
+            document.getElementById('votedSuccess').classList.remove('hidden');
+        } else {
+            Object.keys(candidates).forEach(name => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                const imgHtml = candidates[name].image ? `<img src="${candidates[name].image}">` : `👤`;
+                card.innerHTML = `
+                    <div class="symbol-frame">${imgHtml}</div>
+                    <div class="name-txt">${name}</div>
+                    <button class="btn-vote" onclick="castVote('${name}')">Vote</button>
+                `;
+                ballot.appendChild(card);
+            });
+        }
+
+        if(showResultsToVoters) {
+            resBox.classList.remove('hidden');
+            resContent.innerHTML = Object.keys(candidates).map(name => 
+                `<div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #eee;">
+                    <b>${name}</b> <span>${candidates[name].votes} Votes</span>
+                </div>`
+            ).join("");
+        } else { resBox.classList.add('hidden'); }
+    }
+
+    function castVote(name) {
+        if(confirm(`Confirm vote for ${name}?`)) {
+            candidates[name].votes++;
+            voters.find(v => v.id === activeVoter.id).hasVoted = true;
+            activeVoter.hasVoted = true;
+            localStorage.setItem('election_candidates', JSON.stringify(candidates));
+            localStorage.setItem('election_voters', JSON.stringify(voters));
+            updateVoterUI();
+        }
+    }
+
+    function logout() { location.reload(); }
+</script>
+</body>
+</html>
